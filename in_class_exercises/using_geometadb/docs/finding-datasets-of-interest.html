@@ -26,7 +26,7 @@ ask reproducible questions in SQL from R, and shortlist RNA-seq series.</p>" />
 <meta name="author" content="Ruth Isserlin" />
 
 
-<meta name="date" content="2026-01-27" />
+<meta name="date" content="2026-02-03" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -252,7 +252,7 @@ code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warni
 <span id="cb25-3"><a href="finding-datasets-of-interest.html#cb25-3" tabindex="-1"></a>  <span class="st">&quot;FROM gse JOIN gse_gpl ON gse_gpl.gse = gse.gse&quot;</span>,</span>
 <span id="cb25-4"><a href="finding-datasets-of-interest.html#cb25-4" tabindex="-1"></a>  <span class="st">&quot;JOIN gpl ON gse_gpl.gpl = gpl.gpl&quot;</span>,</span>
 <span id="cb25-5"><a href="finding-datasets-of-interest.html#cb25-5" tabindex="-1"></a>  <span class="st">&quot;WHERE gse.submission_date &gt; &#39;2022-01-01&#39; AND&quot;</span>,</span>
-<span id="cb25-6"><a href="finding-datasets-of-interest.html#cb25-6" tabindex="-1"></a>  <span class="st">&quot;gse.title LIKE &#39;%ovarian%&#39; AND&quot;</span>,</span>
+<span id="cb25-6"><a href="finding-datasets-of-interest.html#cb25-6" tabindex="-1"></a>  <span class="st">&quot;gse.title LIKE &#39;%lung%&#39; AND&quot;</span>,</span>
 <span id="cb25-7"><a href="finding-datasets-of-interest.html#cb25-7" tabindex="-1"></a>  <span class="st">&quot;gpl.organism LIKE &#39;%Homo sapiens%&#39; AND&quot;</span>,</span>
 <span id="cb25-8"><a href="finding-datasets-of-interest.html#cb25-8" tabindex="-1"></a>  <span class="st">&quot;gpl.technology LIKE &#39;%high-throughput sequencing%&#39;&quot;</span>,</span>
 <span id="cb25-9"><a href="finding-datasets-of-interest.html#cb25-9" tabindex="-1"></a>  <span class="st">&quot;ORDER BY gse.submission_date DESC&quot;</span></span>
@@ -267,16 +267,16 @@ code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warni
 <span id="cb25-18"><a href="finding-datasets-of-interest.html#cb25-18" tabindex="-1"></a>  <span class="fu">tail</span>(<span class="fu">unlist</span>(<span class="fu">strsplit</span>(x, <span class="st">&quot;/&quot;</span>)), <span class="at">n =</span> <span class="dv">1</span>)</span>
 <span id="cb25-19"><a href="finding-datasets-of-interest.html#cb25-19" tabindex="-1"></a>}))</span>
 <span id="cb25-20"><a href="finding-datasets-of-interest.html#cb25-20" tabindex="-1"></a><span class="fu">head</span>(shortened, <span class="dv">10</span>)</span></code></pre></div>
-<pre><code>##  [1] &quot;GSE252379_samples_attr.txt.gz&quot;                                           
-##  [2] &quot;GSE235755_raw_counts_batch_adjusted.txt.gz&quot;                              
-##  [3] &quot;GSE231560_OV90_TPM1.counts.txt.gz&quot;                                       
-##  [4] &quot;GSE227276_MTF_KD_KURAMOCHI_FT246.sorted.htseq-count.TPM.txt.gz&quot;          
-##  [5] &quot;GSE223011_Nijhuis_KURAMOCHI_VC_INDISULAM_humanCounts.tsv.xlsx&quot;           
-##  [6] &quot;GSE222982_supplementary_file_estimated_raw_counts_for_all_samples.txt.gz&quot;
-##  [7] &quot;GSE212702_RNA_seq_count_table.xlsx&quot;                                      
-##  [8] &quot;GSE207094_raw_counts.txt.gz&quot;                                             
-##  [9] &quot;GSE202601_human_ovary_snRNA-seq_metadata.txt.gz&quot;                         
-## [10] &quot;GSE201337_PDX_IFN_UMI_counts.csv.gz&quot;</code></pre>
+<pre><code>##  [1] &quot;GSE252118_RNAseq_featurecount.txt.gz&quot;                                   
+##  [2] &quot;GSE239514_HTSeq_count_matrix.tsv.gz&quot;                                    
+##  [3] &quot;GSE238006_Table_S5_RNA-seq_Normalized_Counts_H146_F1339_Veh_vs_Dec.xlsx&quot;
+##  [4] &quot;GSE236438_fpkm.csv.gz&quot;                                                  
+##  [5] &quot;GSE234839_counts.tsv.gz&quot;                                                
+##  [6] &quot;GSE232890_normalized_counts.txt.gz&quot;                                     
+##  [7] &quot;GSE225982_CountMatrix_transcript.txt.gz&quot;                                
+##  [8] &quot;GSE220107_counts_cells.txt.gz&quot;                                          
+##  [9] &quot;GSE213001_Entrez-IDs-Lung-IPF-GRCh38-p12-raw_counts.csv.gz&quot;             
+## [10] &quot;GSE205522_raw_count.txt.gz&quot;</code></pre>
 </div>
 <div id="require-a-minimum-number-of-samples-per-series" class="section level2 hasAnchor" number="5.5">
 <h2><span class="header-section-number">5.5</span> Require a minimum number of samples per series<a href="finding-datasets-of-interest.html#require-a-minimum-number-of-samples-per-series" class="anchor-section" aria-label="Anchor link to header"></a></h2>
@@ -286,14 +286,16 @@ code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warni
 <span id="cb27-4"><a href="finding-datasets-of-interest.html#cb27-4" tabindex="-1"></a></span>
 <span id="cb27-5"><a href="finding-datasets-of-interest.html#cb27-5" tabindex="-1"></a>gse.count <span class="ot">&lt;-</span> <span class="fu">as.data.frame</span>(<span class="fu">table</span>(num_series<span class="sc">$</span>series_id))</span>
 <span id="cb27-6"><a href="finding-datasets-of-interest.html#cb27-6" tabindex="-1"></a><span class="fu">subset</span>(gse.count, Freq <span class="sc">&gt;</span> <span class="dv">6</span>)</span></code></pre></div>
-<pre><code>##        Var1 Freq
-## 1 GSE202601   16
-## 2 GSE207094   45
-## 3 GSE212702   84
-## 4 GSE222982   10
-## 6 GSE227276   30
-## 7 GSE231560   15
-## 8 GSE235755   11</code></pre>
+<pre><code>##         Var1 Freq
+## 1  GSE204753    9
+## 2  GSE205522    9
+## 3  GSE213001  139
+## 4  GSE220107   38
+## 5  GSE225982    9
+## 6  GSE232890    8
+## 8  GSE236438    7
+## 9  GSE239514   25
+## 10 GSE252118  402</code></pre>
 
 </div>
 </div>

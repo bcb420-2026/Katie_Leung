@@ -56,7 +56,7 @@ sql <- paste(
   "FROM gse JOIN gse_gpl ON gse_gpl.gse = gse.gse",
   "JOIN gpl ON gse_gpl.gpl = gpl.gpl",
   "WHERE gse.submission_date > '2022-01-01' AND",
-  "gse.title LIKE '%ovarian%' AND",
+  "gse.title LIKE '%lung%' AND",
   "gpl.organism LIKE '%Homo sapiens%' AND",
   "gpl.technology LIKE '%high-throughput sequencing%'",
   "ORDER BY gse.submission_date DESC"

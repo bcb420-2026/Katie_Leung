@@ -5,9 +5,8 @@ author: "Ruth Isserlin"
 date: "`r format(Sys.Date())`"
 site: bookdown::bookdown_site
 documentclass: book
-description: |
-  A hands-on tutorial that shows how to explore GEO metadata with GEOmetadb,
-  ask reproducible questions in SQL from R, and shortlist RNA-seq series.
+description: "A hands-on tutorial that shows how to explore GEO metadata with GEOmetadb,\nask
+  reproducible questions in SQL from R, and shortlist RNA-seq series.\n"
 ---
 
 # Welcome {-}
