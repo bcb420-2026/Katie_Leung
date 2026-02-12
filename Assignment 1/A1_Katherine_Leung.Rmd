@@ -5,19 +5,19 @@ output:
   html_document:
     toc: true
     toc_float: true
-date: " r Sys.Date() "
-code_folding: hide
+    code_folding: hide
+date: "`r Sys.Date()`"
 bibliography: references.bib
 csl: apa-6th-edition.csl
 ---
 # Introduction
 
-This report will analyse bulk RNA sequencing data from the GEO database, accession number: GSE213001, which looks at the lung tissue of people affected and unaffected by idiopathic pulmonary fibrosis (IPF). This data is associated with an article by Jaffar et al. published in 2022 *****citation. 
-
-Samples were collected from 20 diseased patients and 14 non-diseased controls. 98 samples were collected from diseased tissues and 41 were collected from healthy tissues, for a total of 139 samples. 
+This report will analyse bulk RNA sequencing data from the GEO database, accession number: GSE213001, which looks at the lung tissue of people affected and unaffected by idiopathic pulmonary fibrosis (IPF). This data is associated with an article by Jaffar et al. published in 2022 [@jaffar_matrix_2022] which investigates a biomarker of IPF disease development. 
 
 # Obtaining and assessing the data
-The data was obtained using the GEOquery Bioconductor package ****citation. 
+The data was obtained using the GEOquery Bioconductor package [@davis_geoquery_2007]. 
+Samples were collected from 20 diseased patients and 14 non-diseased controls. A total of 139 samples were collected. Summary statistics can be seen below for samples per condition (disease/normal) and samples per pateint. 
+
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
 # Install GEOquery and other packages for later use
 if (!require("BiocManager", quietly = TRUE))
@@ -56,21 +56,22 @@ eset <- gse[[1]]
 
 pheno <- pData(eset)
 
-# Check how many samples are from diseased patients vs normal patients
-table(pheno$characteristics_ch1.7)
-
 library(knitr)
+# Check how many samples are from diseased patients vs normal patients
+tissue_table <- table(pheno$characteristics_ch1.7)
+names(tissue_table) <- gsub("diseasenormal: ", "", names(tissue_table))
+# Table of number of samples per group (diseased vs normal tissue)
+kable(tissue_table, col.names = c("Tissue type", "Frequency"), caption = "Table 1. Distribution of diseased vs healthy tissue samples")
 
 # Table of samples per patient
 patients <- gsub("[A-Z]$", "", pheno$title)
 kable(table(table(patients)), 
       col.names = c("Samples per patient", "Number of patients"),
-      caption = "Distribution of Samples per Patient")
+      caption = "Table 2. Distribution of samples per patient")
 
 ```
-**Table 1. Distribution of samples per patient** 
 
-```{r, echo=FALSE, message=FALSE, warning=FALSE}
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
 library(GEOquery)
 
 # Data organization 
@@ -108,19 +109,20 @@ barplot(lib_sizes,
         main = "Library Size per Sample",
         ylab = "Total Counts (Millions)", 
         xlab = "Samples",
-        cex.names = 0.4)
+        names.arg = FALSE)
 
 # Check for duplicated genes or samples (none found)
 sum(duplicated(rownames(expr_matrix)))
 sum(duplicated(colnames(expr_matrix)))
 
 ```
+
 **Figure 1. Library size of all 139 samples.** The mean library size is 13.8 million reads. 
 
 This dataset contains 15,065 genes and 139 samples. There are no duplicate genes or samples. 
 
 # Mapping Ensembl IDs to HGNC symbols
-Using Ensembl [CITATION], Ensembl IDs found in the expression data were mapped to HGNC symbols, which are more readable and useful for downstream processing. 
+Using Ensembl [@dyer_ensembl_2025], Ensembl IDs found in the expression data were mapped to HGNC symbols, which are more readable and useful for downstream processing. 
 
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
 library(biomaRt)
@@ -154,25 +156,23 @@ missing <- id_conversion$hgnc_symbol == "" | is.na(id_conversion$hgnc_symbol)
 id_conversion$hgnc_symbol[missing] <- id_conversion$ensembl_gene_id[missing]
 
 # Merge with expression data
-expr_annot <- merge(id_conversion, expr_matrix, 
-                    by.x = 1, by.y = 0, all.y = TRUE)
-
-# View results
-kable(head(expr_annot[, 1:5]), caption = "Preview of expression data with mapped HGNC symbols")
+expr_annot <- merge(id_conversion, expr_matrix, by.x = 1, by.y = 0, all.y = TRUE)
 
 # Check missing gene symbols after merge and puts Ensembl ID in the place of NA (for genes not found)
 ensembl_id_missing_gene <- expr_annot$ensembl_gene_id[which(is.na(expr_annot$hgnc_symbol))]
 
 # How many ensembl IDs were missing HGNC genes
-length(ensembl_id_missing_gene)
+#length(ensembl_id_missing_gene)
 
 missing <- which(is.na(expr_annot$hgnc_symbol))
 expr_annot$hgnc_symbol[missing] <- expr_annot$ensembl_gene_id[missing]
 
-```
-**Table 2. Preview of expression data mapped to HGNC symbols**
+# View results
+kable(head(expr_annot[, 1:5]), caption = "Table 3. Preview of expression data with mapped HGNC symbols")
 
-```{r, echo=FALSE, message=FALSE, warning=FALSE}
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
 # Check for duplicates (before it was showing 38 for the 39 empty string "" HGNC symbols)
 dup_symbols <- duplicated(expr_annot$hgnc_symbol)
 sum(dup_symbols)
@@ -215,9 +215,10 @@ library(edgeR)
 expr_cpm <- cpm(y = expr_final)
 plot_box(expr_cpm, main = "Counts per Million of All 139 Samples")
 ```
-**Figure 2. Box plot of counts per million (CPM) of all 139 samples** CPM calculated using edgeR [@robinson_edger_2010]. Code adapted from BCB420 Lecture 5.
 
-Most samples appear to have a similar mean CPM. With so many samples, it is difficult to visualize the entirety of the data. 
+**Figure 2. Box plot of counts per million (CPM) of all 139 samples** CPM calculated using EdgeR [@robinson_edger_2010]. Code adapted from BCB420 Lecture 5.
+
+Some samples have a mean CPM clearly lower than the rest, but with so many samples it is difficult to compare them all. A density plot can help with this visualization.  
 
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
 # Function to plot the density of counts. Value + 1 ensures no log(0).
@@ -238,12 +239,13 @@ plot_density <- function(mat, main = "") {
 plot_density(expr_cpm, main = "Counts per Million of All Samples")
 
 ```
-**Figure 3. Density plot of counts per million (CPM) for all 139 samples.*** CPM calculated using edgeR [@robinson_edger_2010]. Code adapted from BCB420 Lecture 5.
 
-As expected, there is somewhat of a peak near zero counts as many genes are expressed in low quantity. 
+**Figure 3. Density plot of counts per million (CPM) for all 139 samples.** CPM calculated using EdgeR [@robinson_edger_2010]. Code adapted from BCB420 Lecture 5.
+
+As expected, there is somewhat of a peak near zero counts as many genes are expressed in low quantity. One sample (orange) stands out from the rest, with the CPM curve shifted to the left. 
 
 ## Filter out genes with low expression
-EdgeR was again used to filter out genes with low expression levels (counts < 3). 
+Next, EdgeR was used to filter out genes with low expression levels (counts < 3). 
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
 # Remove any genes with less than 3 counts:
 filtered_data <- edgeR::filterByExpr(expr_cpm, min.count = 3)
@@ -251,19 +253,23 @@ expr_cpm_filtered <- expr_cpm[filtered_data,]
 
 plot_box(expr_cpm_filtered,main = "Counts per Million with Lowly Expressed Genes (<3 Counts) Filtered Out")
 ```
+
 **Figure 4. Box plot of counts per million of all 139 samples** after removal of genes which are lowly expressed (< 3 counts). 
 
-Again, a density plot of CPM after filtering: 
+Again, a density plot was made for visualization, and the drop in low counts is clear: 
+
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
 plot_density(expr_cpm_filtered,main = "Counts per Million with Lowly Expressed Genes (<3 counts) Filtered Out")
 ```
+
 **Figure 5. Density plot of counts per million** after removal of genes which are lowly expressed (< 3 counts). 
 
 ## Using a design matrix
-It is important to use a design matrix as it allows filtering to be done in a way that considers our conditions. Without one, genes that are differentially expressed between conditions, in this case diseased vs non diseased patients, could be filtered out if they have low counts in one of the two conditions.  
+It is important to use a design matrix as it allows filtering to be done in a way that considers our conditions (normal vs diseased tissue). Without one, genes that are differentially expressed between conditions, could be filtered out if they have low counts in one of the two conditions.  
 
-Information on whether the sample is from a diseased on healthy person is found in the metadata. 
-```{r, echo=FALSE, message=FALSE, warning=FALSE}
+Information on whether the sample is from a diseased on healthy person is found in the metadata, and this will be used to make the design matrix. 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
 # Make a design matrix with expression data (pheno)
 # Match pheno to expression data column using title column
 matched_pheno <- pheno[match(colnames(expr_final), pheno$title), ]
@@ -282,15 +288,17 @@ colnames(design_filtered_data) <- paste(pheno$characteristics_ch1.7, 1:nrow(phen
 plot_box(design_filtered_data, main = "Counts per Million with Lowly Expressed Genes (<3 counts) Filtered Out \nUsing Design Matrix")
 
 ```
+
 **Figure 6. Box plot of counts per million** of all 139 samples after removal of lowly expressed genes and using a design matrix
 
 Once again, a density plot allows us to visualise the change in distribution: 
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
-plot_density(design_filtered_data,main = "Counts per Million with Lowly Expressed Genes (<3 counts) Filtered Out\nUsing Design Matrix")
+plot_density(design_filtered_data,main = "Counts per Million with Lowly Expressed Genes (<3 Counts) Filtered Out\nUsing Design Matrix")
 ```
+
 **Figure 7. Density of counts per million** of all 139 samples after removal of lowly expressed genes and using a design matrix
 
-Compared to the initial plot, we can see that the number of genes with low counts has decreased. We should expect a similar result after normalization.
+Compared to the initial plot, we can see that the number of genes with low counts has decreased. We should expect a similar result after the following normalization steps. 
 
 ## Normalization using Trimmed Mean of M-values (TMM)
 TMM is a sample-based normalization method, based off of the idea that most genes aren't differentially expressed. It compares expression to a reference sample and is commonly used with RNA-seq data. It finds the log expression ratio (M value) for all genes, comparing to the reference, trims data with extreme M and A (expression) values, and calculates a weighted mean of the remaining ratios [@robinson_scaling_2010].
@@ -315,17 +323,22 @@ norm_cpm <- cpm(dge_filtered , log = FALSE, prior.count = 1)
 plot_box(norm_cpm, main = "TMM-Normalized Gene Expression")
 
 ```
-**Figure 8. Box plot of Trimmed Mean of M-values (TMM)-normalized gene expression** for all 139 samples. The default minimum count is used. 
+
+**Figure 8. Box plot of Trimmed Mean of M-values (TMM)-normalized gene expression** for all 139 samples. The default minimum count of 10 is used. 
+
+After TMM normalization, there are no obvious outliers, and the means are more closely aligned than after manual cleaning (Figure 6).
 
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
 plot_density(norm_cpm, main = "TMM-Normalized Gene Expression")
 ```
-**Figure 9. Box plot of Trimmed Mean of M-values (TMM)-normalized gene expression** for all 139 samples. The default minimum count is used. 
 
-Compared to the original data (Figure 3), we can see that genes with low counts have been removed and the curve is overall more clean. 
+**Figure 9. Box plot of Trimmed Mean of M-values (TMM)-normalized gene expression** for all 139 samples. The default minimum count of 10 is used. 
+
+Compared to the original data (Figure 3), we can see that low counts have been removed and the curve is overall more compact. 
 
 ## MDS Plot 
-Next, we represented the data in an a multidimensional scaling (MDS) plot to visualize the similarities and differences of this high dimensional data.
+Next, we represented the data in an a multidimensional scaling (MDS) plot to visualize the similarities and differences between samples. 
+
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
 # MDS plot
 group <- factor(pheno$characteristics_ch1.7)
@@ -344,32 +357,36 @@ legend("topright", legend = short_labels,
        bty = "n")
 
 ```
-**Figure 10. Multidimensional scaling (MDS) plot of TMM normalized data** Red circles represent healthy donor samples, and black triangles represent diseased donor samples. 
+**Figure 10. Multidimensional scaling (MDS) plot of TMM normalized data** Red circles represent healthy donor samples, and black triangles represent diseased donor samples. Points are positioned based on similarity. 
 
-By inspection, there is not a clear separation between diseased and normal tissues. 
+By inspection, there is not a clear separation between diseased and normal tissues. With all points being quite spread out, there are no obvious outliers. 
 
 # Differential expression analysis
 
 First, a biological coefficient of varience (BCV) plot was created to show how gene expression varies between samples. This plot can be used to verify the dispersion of genes (BCV is the square root of dispersion).
 
-```{r, echo=FALSE, message=FALSE, warning=FALSE}
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
 # For BCV visualization only (DE testing done with limma-voom below)
 # Estimate dispersion and fit a Quasi-Likelihood Generalized Linear Model (GLM) to the data
 edge <- edgeR::estimateDisp(dge_filtered, design)
-plotBCV(edge, main= "Biological Coefficient of Variance Plot")
+edgeR::plotBCV(edge, main= "Biological Coefficient of Variance Plot")
 
-summary(edge$tagwise.dispersion)
 ```
+
 **Figure 11. Biological coefficient of variance (BCV) plot** Common BCV plotted in red and trend BCV plotted in blue. 
 
 Common BCV is approximately 50%, while the trend BCV, which accounts for expression level, decreases from ~70% in less expressed genes to ~40% in higher expressed genes. This decrease is expected as genes with low count tend to contain more noise. Overall, the points remain relatively close to the trendline, which indicates successful dispersion estimation. 
 
-Some points have very high dispersion (maximum of 7.55), which could be due to each of the 139 samples being treated independently. Of the three most widely used differential expression analysis tools (limma, EdgeR and DESeq2), which perform similarly [@liu_three_2021], limma [CITATION] has the advantage of the duplicateCorrelation function, which models within-patient correlation (takes into account multiple samples coming from one individual). This is important as many patients contributed multiple samples to this data set, and treating them as indepent could inflate variance measurements. Voom was used to transform data from EdgeR so that it can be used by limma [CITATION]. 
+## DE analysis with limma 
+Some points have very high dispersion (maximum of 7.55), which could be due to each of the 139 samples being treated independently. Of the three most widely used differential expression analysis tools (limma, EdgeR and DESeq2), which perform similarly [@liu_three_2021], limma [@ritchie_limma_2015] has the advantage of the duplicateCorrelation function, which models within-patient correlation (takes into account multiple samples coming from one individual). This is important as many patients contributed multiple samples to this data set, and treating them as indepent could inflate variance measurements. Voom was used to transform data from EdgeR so that it can be used by limma [@law_voom_2014]. 
 
-```{r, echo=FALSE, message=FALSE, warning=FALSE}
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+# Summary of dispersion data
+summary(edge$tagwise.dispersion)
+
 # Design column names are not syntactically valid, change: 
 colnames(design) <- c("Disease", "Normal")                                                                                                                 
-# Make contrast: disease vs normal
+# Make contrast (volcano plot will show up/down regulation in diseased tissues)
 contr <- makeContrasts(
   disease_vs_normal = Disease - Normal,
   levels = design
@@ -397,6 +414,13 @@ fit <- lmFit(v, design, block = patient, correlation = corfit$consensus.correlat
 fit2 <- contrasts.fit(fit, contr)
 fit2 <- eBayes(fit2)
 
+```
+## Differential expression results
+The consensus correlation is 0.322, which indicates that there is a moderate correlation between samples from a single patient.
+A threshold of 0.05 was chosen for both p-value and FDR/multiple hypothesis correction as this is the standard cutoff used. After differential expression analysis, 8,192 genes pass the p < 0.05 threshold and 7,182 pass FDR correction (at most 5% of significant genes are expected to be false positives) out of the total 15,065 genes.
+Next, we can look at the top genes which are the most differentially expressed. 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
 # topTable instead of topTags (used in edgeR) to view results
 results <- topTable(fit2, n = Inf)
 sum(results$P.Value < 0.05) 
@@ -404,19 +428,15 @@ sum(results$P.Value < 0.05)
 # adj.P.Val is FDR in limma
 sum(results$adj.P.Val < 0.05)
 
+library(limma)
+# Make a table to preview top results 
+results <- topTable(fit2, n = Inf) %>%
+  rownames_to_column("HGNC symbol") %>%
+  dplyr::select(-t, -B)
 ```
-## Differential expression results
-The consensus correlation is 0.322, which indicates that there is a moderate correlation between samples from a single patient.
-A threshold of 0.05 was chosen for both p-value and FDR/multiple hypothesis correction as this is the standard cutoff used. After differential expression analysis, we can see that 8192 genes pass the p < 0.05 threshold. 7182 pass FDR correction (at most 5% of significant genes are expected to be false positives).
-Next, we can look at the top genes which are the most differentially expressed. 
-
-```{r, echo=FALSE, message=FALSE, warning=FALSE}
-results <- edgeR::topTags(qlf, n = Inf)$table %>%
-  rownames_to_column("HGNC symbol")
-
-kable(head(results), caption = "Top differentially expressed genes", digits = 50)
+```{r}
+kable(head(results), caption = "Table 4. Preview of top differentially expressed genes", digits = 50, col.names = c("HGNC symbol", "logFC", "Average Expression", "p-value", "FDR corrected p-value"))
 ```
-**Table 3. Preview of top differentially expressed genes**
 
 ## Volcano plot of EdgeR results
 
@@ -435,30 +455,34 @@ ggplot(tab, aes(x = logFC, y = neglog10P)) +
   geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "steelblue") +
   theme_minimal() +
   labs(
-    title = "Volcano plot of genes in diseased vs healthy lung tissue",
+    title = "Volcano Plot of Gene Expression in Diseased Tissue",
     x = "log2 fold change (logFC)",
     y = "-log10(p-value)",
     color = NULL
   )
 ```
-**Figure X. Volcano plot representing the differential expression of genes in IPF** Red points represent genes which are significantly upregulated in diseased tissue (FDR < 0.05, logFC > 0), blue points represent genes that are significantly downregulated in diseased tissue (FDR < 0.05, logFC < 0), and grey points represent genes that are not significantly differentially expressed. 
+
+**Figure 12. Volcano plot representing the differential expression of genes in IPF.** Red points represent genes which are significantly upregulated in diseased tissue (FDR < 0.05, logFC > 0), blue points represent genes that are significantly downregulated in diseased tissue (FDR < 0.05, logFC < 0), and grey points represent genes that are not significantly differentially expressed. 
 
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
 # Chose the top n most significantly differentially expressed genes (by FDR) to display in a heatmap
 top_n <- 20
 
 # Take table, order rows by FDR, then by p-value if necessary, then take top_n rows
-top_hits <- table %>%
-  arrange(FDR, PValue) %>%
-  slice_head(n = top_n)
+top_hits <- tab %>%                                           
+    dplyr::arrange(adj.P.Val, P.Value) %>%
+    dplyr::slice_head(n = top_n) 
 
 # Gene names
 top_genes <- top_hits$gene
 
-kable(head(top_hits[, c("gene", "logFC", "FDR")]), digits = 50)
+kable(head(top_hits[, c("gene", "logFC", "adj.P.Val")]), digits = 50, col.names = c("Gene", "logFC", "FDR-corrected p-value"), caption = "Table 5. Preview of most differentially expressed genes by FDR-corrected p-value")
 
 heatmap_data <- norm_cpm[top_genes, ]
 ```
+# Heatmap 
+
+Finally, a heatmap was used to visualize gene expression in diseased tissues. Genes that are upregulated or downregulated in diseased tissues could be important to understanding IPF development. 
 
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
 #Making a heat map
@@ -485,7 +509,7 @@ disease <- factor(matched_pheno$characteristics_ch1.7)
 
 # Assign colors to status
 levels(disease) <- short_labels
-disease_cols <- setNames(c("maroon", "palegreen4"), levels(disease))
+disease_cols <- setNames(c("red4", "palegreen4"), levels(disease))
 
 # Create annotation 
 hm_annot <- HeatmapAnnotation(disease = disease, col = list(disease = disease_cols),
@@ -500,25 +524,28 @@ Heatmap(hm_z,
         column_title = "Heatmap of Top 20 Differentially Expressed Genes"
         )
 ```
-**Figure X. Heatmap of top 20 differentially expressed genes** 
+
+**Figure 13. Heatmap of top 20 differentially expressed genes based on FDR-corrected p-value.** Comparing diseased tissues to normal tissues. Rows represent the top 20 genes and columns represent the 139 samples.Red represents positive z-scores (upregulation), and blue represents negative z-scores (downregulation).
+
 There is clear clustering observed where genes are upregulated in one condition (diseased/normal tissue) and downregulated in the other. 
 
 ## Questions: 
-1. Why is the dataset of interest to you?
-I read the paper and appreciated its brevity and straightforwardness. I hadn't heard of Idiopathic pulmonary fibrosis (IPF) before, and the topic interested me. 
-2. What are the control and test conditions of the dataset? 
+1. Why is the dataset of interest to you? <br>
+I hadn't heard of Idiopathic pulmonary fibrosis (IPF) before, and the topic interested me as it was different to research I had done previously (cancer/microbiome research). I read the paper and appreciated its brevity and straightforwardness, and the potential offered by the large number of samples. 
+2. What are the control and test conditions of the dataset? <br>
 [Test conditions](#obtaining-and-assessing-the-data)
-3. How many samples in each of the conditions of your dataset?
+3. How many samples in each of the conditions of your dataset?<br>
 [Test conditions](#introduction)
-4. Were there expression values that were not unique for specific genes? How did you handle these?
-No. 
-5. Were there expression values that could not be mapped to current HUGO symbols?
+4. Were there expression values that were not unique for specific genes? How did you handle these?<br>
+No. [Test conditions](#obtaining-and-assessing-the-data)
+5. Were there expression values that could not be mapped to current HUGO symbols? <br>
 Yes. [Mapping Ensembl IDs to HGNC symbols](#mapping-ensembl-ids-to-hgnc-symbols)
-6. Were there any outliers in your dataset? How were they handled in the originating paper? How many outliers were removed?
-No.
-7. How did you handle replicates? 
-There were none. See end of  [Obtaining and assessing the data](#obtaining-and-assessing-the-data)
-8. What is the final coverage of your dataset?
+6. Were there any outliers in your dataset? How were they handled in the originating paper? How many outliers were removed? <br>
+No clear outliers were identified based on visual inspection of boxplots and MDS plot.
+[Normalization using Trimmed Mean of M-values (TMM)](normalization-using-trimmed-mean-of-m-values-tmm) and [MDS Plot](mds-plot)
+7. How did you handle replicates? <br>
+[DE analysis with limma](de-analysis-with-limma)
+8. What is the final coverage of your dataset? <br>
 [Differential expression results](#differential-expression-results)
 
 # References
