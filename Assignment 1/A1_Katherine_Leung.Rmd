@@ -1,0 +1,524 @@
+---
+title: "Assignment 1"
+author: "Katherine Leung"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+date: " r Sys.Date() "
+code_folding: hide
+bibliography: references.bib
+csl: apa-6th-edition.csl
+---
+# Introduction
+
+This report will analyse bulk RNA sequencing data from the GEO database, accession number: GSE213001, which looks at the lung tissue of people affected and unaffected by idiopathic pulmonary fibrosis (IPF). This data is associated with an article by Jaffar et al. published in 2022 *****citation. 
+
+Samples were collected from 20 diseased patients and 14 non-diseased controls. 98 samples were collected from diseased tissues and 41 were collected from healthy tissues, for a total of 139 samples. 
+
+# Obtaining and assessing the data
+The data was obtained using the GEOquery Bioconductor package ****citation. 
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Install GEOquery and other packages for later use
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+if (!require("GEOquery", quietly = TRUE))
+    BiocManager::install("GEOquery")
+if(!require("tidyverse", quietly = TRUE)) {
+  install.packages("tidyverse")
+}
+if(!require("knitr", quietly = TRUE)) {
+  install.packages("knitr")
+}
+
+library(GEOquery)
+
+# Load the dataset
+geo_id <- "GSE213001"
+data_dir <- "data/GEO_cache"
+
+# Make directory if it doesn't already exist
+dir.create(data_dir, recursive = TRUE, showWarnings = FALSE)
+
+# Cache file path
+gse_cache <- file.path(data_dir, paste0(geo_id, "_eset.rds"))
+
+# Download GEO metadata or load from cache
+if (file.exists(gse_cache)) {
+  gse <- readRDS(gse_cache)
+} else {
+  gse <- getGEO(geo_id, GSEMatrix = TRUE)
+  saveRDS(gse, gse_cache)
+}
+
+# Get first (and only) expression set from getGEO search
+eset <- gse[[1]]
+
+pheno <- pData(eset)
+
+# Check how many samples are from diseased patients vs normal patients
+table(pheno$characteristics_ch1.7)
+
+library(knitr)
+
+# Table of samples per patient
+patients <- gsub("[A-Z]$", "", pheno$title)
+kable(table(table(patients)), 
+      col.names = c("Samples per patient", "Number of patients"),
+      caption = "Distribution of Samples per Patient")
+
+```
+**Table 1. Distribution of samples per patient** 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(GEOquery)
+
+# Data organization 
+gse <- "GSE213001"
+cache_dir <- "data/GEO_cache"
+
+# Create directory if it doesn't exist
+if (!dir.exists(cache_dir)) {
+  dir.create(cache_dir, recursive = TRUE)
+}
+
+# Download supplementary files (only if not already there)
+supp_dir <- file.path(cache_dir, gse)
+if (!dir.exists(supp_dir)) {
+  getGEOSuppFiles(gse, baseDir = cache_dir)
+}
+
+# Get files to download
+files <- list.files(supp_dir, pattern = "\\.gz$", full.names = TRUE)
+
+# Read in CSV file and make data a matrix
+expr_data <- read.csv(files[2], header = TRUE, row.names = 1)
+expr_matrix <- as.matrix(expr_data)
+
+expr_matrix <- apply(expr_matrix, 2, as.numeric)
+rownames(expr_matrix) <- rownames(expr_data)
+
+# Library size (counts per sample in millions)                                                        
+lib_sizes <- colSums(expr_matrix)/1000000
+mean(lib_sizes)
+
+# Display bar plot in report
+barplot(lib_sizes,
+        las = 2,
+        main = "Library Size per Sample",
+        ylab = "Total Counts (Millions)", 
+        xlab = "Samples",
+        cex.names = 0.4)
+
+# Check for duplicated genes or samples (none found)
+sum(duplicated(rownames(expr_matrix)))
+sum(duplicated(colnames(expr_matrix)))
+
+```
+**Figure 1. Library size of all 139 samples.** The mean library size is 13.8 million reads. 
+
+This dataset contains 15,065 genes and 139 samples. There are no duplicate genes or samples. 
+
+# Mapping Ensembl IDs to HGNC symbols
+Using Ensembl [CITATION], Ensembl IDs found in the expression data were mapped to HGNC symbols, which are more readable and useful for downstream processing. 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(biomaRt)
+
+# Use Ensembl to browse homo sapiens data set 
+ensembl <- useMart("ensembl")
+ensembl <- useDataset("hsapiens_gene_ensembl", mart = ensembl)
+
+# Identify IDs to be mapped
+ids_to_convert <- rownames(expr_matrix)
+
+# Get the mappings (with caching to avoid re-downloading)
+conversion <- "data/id_conversion.rds"
+
+if (file.exists(conversion)) {
+  id_conversion <- readRDS(conversion)
+} else {
+  id_conversion <- getBM(
+    attributes = c("ensembl_gene_id", "hgnc_symbol"),
+    filters = c("ensembl_gene_id"),
+    values = ids_to_convert,
+    mart = ensembl
+  )
+  saveRDS(id_conversion, conversion)
+}
+
+
+# HGNC returned an empty string (known genes but no assigned HUGO symbol)
+# Fix in id_conversion BEFORE merging (replace empty string with ensembl gene ID)
+missing <- id_conversion$hgnc_symbol == "" | is.na(id_conversion$hgnc_symbol)
+id_conversion$hgnc_symbol[missing] <- id_conversion$ensembl_gene_id[missing]
+
+# Merge with expression data
+expr_annot <- merge(id_conversion, expr_matrix, 
+                    by.x = 1, by.y = 0, all.y = TRUE)
+
+# View results
+kable(head(expr_annot[, 1:5]), caption = "Preview of expression data with mapped HGNC symbols")
+
+# Check missing gene symbols after merge and puts Ensembl ID in the place of NA (for genes not found)
+ensembl_id_missing_gene <- expr_annot$ensembl_gene_id[which(is.na(expr_annot$hgnc_symbol))]
+
+# How many ensembl IDs were missing HGNC genes
+length(ensembl_id_missing_gene)
+
+missing <- which(is.na(expr_annot$hgnc_symbol))
+expr_annot$hgnc_symbol[missing] <- expr_annot$ensembl_gene_id[missing]
+
+```
+**Table 2. Preview of expression data mapped to HGNC symbols**
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Check for duplicates (before it was showing 38 for the 39 empty string "" HGNC symbols)
+dup_symbols <- duplicated(expr_annot$hgnc_symbol)
+sum(dup_symbols)
+
+# Set gene symbols as rownames
+rownames(expr_annot) <- expr_annot$hgnc_symbol
+expr_final <- as.matrix(expr_annot[, -c(1, 2)])  # remove ID columns
+
+# Final check
+dim(expr_final)
+head(expr_final[, 1:5])
+```
+Genes that did not map to a HUGO gene symbol were retained under their Ensembl ID, as they may still show differential expression.
+There were no duplicate genes, though if there had been, average expression could have be taken. 
+
+# Normalization
+
+First, we would like to get an overview of the data by making a boxplot and a density plot of read counts. Counts per million were calculated using EdgeR [@robinson_edger_2010].
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+# Boxplot
+plot_box <- function(data_set, main = "", ylab = "log2(counts+1)") {
+  df <- as.data.frame(data_set)
+  df_long <- df |>
+    mutate(gene = rownames(df)) |>
+    pivot_longer(-gene, names_to = "sample", values_to = "value") |>
+    mutate(value = log2(value + 1))
+
+  ggplot(df_long, aes(x = sample, y = value)) +
+    geom_boxplot(outlier.size = 0.2) +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+    labs(title = main, x = "Samples", y = ylab) + 
+    theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+}
+
+# Convert counts to counts per million: 
+library(edgeR)
+expr_cpm <- cpm(y = expr_final)
+plot_box(expr_cpm, main = "Counts per Million of All 139 Samples")
+```
+**Figure 2. Box plot of counts per million (CPM) of all 139 samples** CPM calculated using edgeR [@robinson_edger_2010]. Code adapted from BCB420 Lecture 5.
+
+Most samples appear to have a similar mean CPM. With so many samples, it is difficult to visualize the entirety of the data. 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Function to plot the density of counts. Value + 1 ensures no log(0).
+plot_density <- function(mat, main = "") {
+  df <- as.data.frame(mat)
+  df_long <- df |>
+    mutate(gene = rownames(df)) |>
+    pivot_longer(-gene, names_to = "sample", values_to = "value") |>
+    mutate(value = log2(value + 1))
+
+  ggplot(df_long, aes(x = value, colour = sample)) +
+    geom_density() +
+    theme_bw() +
+    labs(title = main, x = "log2(counts+1)", y = "Density") +
+    guides(colour = "none")
+}
+
+plot_density(expr_cpm, main = "Counts per Million of All Samples")
+
+```
+**Figure 3. Density plot of counts per million (CPM) for all 139 samples.*** CPM calculated using edgeR [@robinson_edger_2010]. Code adapted from BCB420 Lecture 5.
+
+As expected, there is somewhat of a peak near zero counts as many genes are expressed in low quantity. 
+
+## Filter out genes with low expression
+EdgeR was again used to filter out genes with low expression levels (counts < 3). 
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Remove any genes with less than 3 counts:
+filtered_data <- edgeR::filterByExpr(expr_cpm, min.count = 3)
+expr_cpm_filtered <- expr_cpm[filtered_data,]
+
+plot_box(expr_cpm_filtered,main = "Counts per Million with Lowly Expressed Genes (<3 Counts) Filtered Out")
+```
+**Figure 4. Box plot of counts per million of all 139 samples** after removal of genes which are lowly expressed (< 3 counts). 
+
+Again, a density plot of CPM after filtering: 
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+plot_density(expr_cpm_filtered,main = "Counts per Million with Lowly Expressed Genes (<3 counts) Filtered Out")
+```
+**Figure 5. Density plot of counts per million** after removal of genes which are lowly expressed (< 3 counts). 
+
+## Using a design matrix
+It is important to use a design matrix as it allows filtering to be done in a way that considers our conditions. Without one, genes that are differentially expressed between conditions, in this case diseased vs non diseased patients, could be filtered out if they have low counts in one of the two conditions.  
+
+Information on whether the sample is from a diseased on healthy person is found in the metadata. 
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Make a design matrix with expression data (pheno)
+# Match pheno to expression data column using title column
+matched_pheno <- pheno[match(colnames(expr_final), pheno$title), ]
+
+# Build design matrix
+group <- factor(matched_pheno$characteristics_ch1.7)
+design <- model.matrix(~ 0 + group)
+design
+
+# Filter using design matrix
+design_filter <- edgeR::filterByExpr(expr_cpm, min.count = 3, design = design)
+design_filtered_data <- expr_cpm[design_filter,]
+
+colnames(design_filtered_data) <- paste(pheno$characteristics_ch1.7, 1:nrow(pheno),sep = "_")
+
+plot_box(design_filtered_data, main = "Counts per Million with Lowly Expressed Genes (<3 counts) Filtered Out \nUsing Design Matrix")
+
+```
+**Figure 6. Box plot of counts per million** of all 139 samples after removal of lowly expressed genes and using a design matrix
+
+Once again, a density plot allows us to visualise the change in distribution: 
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+plot_density(design_filtered_data,main = "Counts per Million with Lowly Expressed Genes (<3 counts) Filtered Out\nUsing Design Matrix")
+```
+**Figure 7. Density of counts per million** of all 139 samples after removal of lowly expressed genes and using a design matrix
+
+Compared to the initial plot, we can see that the number of genes with low counts has decreased. We should expect a similar result after normalization.
+
+## Normalization using Trimmed Mean of M-values (TMM)
+TMM is a sample-based normalization method, based off of the idea that most genes aren't differentially expressed. It compares expression to a reference sample and is commonly used with RNA-seq data. It finds the log expression ratio (M value) for all genes, comparing to the reference, trims data with extreme M and A (expression) values, and calculates a weighted mean of the remaining ratios [@robinson_scaling_2010].
+
+EdgeR is used to create the DGEList object, which will serve as input for future steps [@robinson_edger_2010]. 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Normalize data using TMM 
+library(edgeR)
+
+dge <- DGEList(counts = expr_final)
+
+# Default minimum count of 10, include design matrix:
+dge_filtered <- dge[filterByExpr(dge, design = design),]
+
+# Calculate TMM
+dge_filtered  <- calcNormFactors(dge_filtered , method = "TMM")
+
+# Prior.count adds 1 to prevent 0s
+norm_cpm <- cpm(dge_filtered , log = FALSE, prior.count = 1)
+
+plot_box(norm_cpm, main = "TMM-Normalized Gene Expression")
+
+```
+**Figure 8. Box plot of Trimmed Mean of M-values (TMM)-normalized gene expression** for all 139 samples. The default minimum count is used. 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+plot_density(norm_cpm, main = "TMM-Normalized Gene Expression")
+```
+**Figure 9. Box plot of Trimmed Mean of M-values (TMM)-normalized gene expression** for all 139 samples. The default minimum count is used. 
+
+Compared to the original data (Figure 3), we can see that genes with low counts have been removed and the curve is overall more clean. 
+
+## MDS Plot 
+Next, we represented the data in an a multidimensional scaling (MDS) plot to visualize the similarities and differences of this high dimensional data.
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# MDS plot
+group <- factor(pheno$characteristics_ch1.7)
+short_labels <- gsub("diseasenormal: ", "", levels(group))
+
+# Plot MDS graph 
+plotMDS(dge_filtered, top = 500,
+        pch = c(17, 16)[as.integer(group)],      
+        col = c(2, 1)[as.integer(group)],
+        main = "MDS Plot"
+        ) 
+legend("topright", legend = short_labels,
+       col = c(2,1),
+       title = "Tissue Type",
+       pch = c(17, 16),   
+       bty = "n")
+
+```
+**Figure 10. Multidimensional scaling (MDS) plot of TMM normalized data** Red circles represent healthy donor samples, and black triangles represent diseased donor samples. 
+
+By inspection, there is not a clear separation between diseased and normal tissues. 
+
+# Differential expression analysis
+
+First, a biological coefficient of varience (BCV) plot was created to show how gene expression varies between samples. This plot can be used to verify the dispersion of genes (BCV is the square root of dispersion).
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# For BCV visualization only (DE testing done with limma-voom below)
+# Estimate dispersion and fit a Quasi-Likelihood Generalized Linear Model (GLM) to the data
+edge <- edgeR::estimateDisp(dge_filtered, design)
+plotBCV(edge, main= "Biological Coefficient of Variance Plot")
+
+summary(edge$tagwise.dispersion)
+```
+**Figure 11. Biological coefficient of variance (BCV) plot** Common BCV plotted in red and trend BCV plotted in blue. 
+
+Common BCV is approximately 50%, while the trend BCV, which accounts for expression level, decreases from ~70% in less expressed genes to ~40% in higher expressed genes. This decrease is expected as genes with low count tend to contain more noise. Overall, the points remain relatively close to the trendline, which indicates successful dispersion estimation. 
+
+Some points have very high dispersion (maximum of 7.55), which could be due to each of the 139 samples being treated independently. Of the three most widely used differential expression analysis tools (limma, EdgeR and DESeq2), which perform similarly [@liu_three_2021], limma [CITATION] has the advantage of the duplicateCorrelation function, which models within-patient correlation (takes into account multiple samples coming from one individual). This is important as many patients contributed multiple samples to this data set, and treating them as indepent could inflate variance measurements. Voom was used to transform data from EdgeR so that it can be used by limma [CITATION]. 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Design column names are not syntactically valid, change: 
+colnames(design) <- c("Disease", "Normal")                                                                                                                 
+# Make contrast: disease vs normal
+contr <- makeContrasts(
+  disease_vs_normal = Disease - Normal,
+  levels = design
+)
+
+if(!require("limma", quietly = TRUE)) {
+  BiocManager::install("limma")
+}
+
+library(limma)  
+patient <- factor(gsub("[A-Z]$", "", matched_pheno$title))
+
+# Convert to a voom object (connecting edgeR and limma)
+v <- voom(dge_filtered, design)
+
+# Estimate within-patient correlation, consensus correlation represents how correlated samples from the same patient are
+corfit <- duplicateCorrelation(v, design, block = patient)
+corfit$consensus.correlation
+
+# Re-run voom with the correlation
+v <- voom(dge_filtered, design, block = patient, correlation = corfit$consensus.correlation)
+
+# Fit the model accounting for patient sample correlation
+fit <- lmFit(v, design, block = patient, correlation = corfit$consensus.correlation)
+fit2 <- contrasts.fit(fit, contr)
+fit2 <- eBayes(fit2)
+
+# topTable instead of topTags (used in edgeR) to view results
+results <- topTable(fit2, n = Inf)
+sum(results$P.Value < 0.05) 
+
+# adj.P.Val is FDR in limma
+sum(results$adj.P.Val < 0.05)
+
+```
+## Differential expression results
+The consensus correlation is 0.322, which indicates that there is a moderate correlation between samples from a single patient.
+A threshold of 0.05 was chosen for both p-value and FDR/multiple hypothesis correction as this is the standard cutoff used. After differential expression analysis, we can see that 8192 genes pass the p < 0.05 threshold. 7182 pass FDR correction (at most 5% of significant genes are expected to be false positives).
+Next, we can look at the top genes which are the most differentially expressed. 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+results <- edgeR::topTags(qlf, n = Inf)$table %>%
+  rownames_to_column("HGNC symbol")
+
+kable(head(results), caption = "Top differentially expressed genes", digits = 50)
+```
+**Table 3. Preview of top differentially expressed genes**
+
+## Volcano plot of EdgeR results
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Volcano plot 
+tab <- topTable(fit2, n = Inf) %>%
+  rownames_to_column("gene") %>%
+  mutate(neglog10P = -log10(P.Value),
+  direction = case_when(adj.P.Val < 0.05 & logFC > 0 ~ "Up", adj.P.Val < 0.05 & logFC < 0 ~ "Down", TRUE ~ "Not sig")
+)
+
+ggplot(tab, aes(x = logFC, y = neglog10P)) +
+  geom_point(aes(color = direction), alpha = 0.7, size = 1.2) +
+  scale_color_manual(values = c("Up" = "red", "Down" = "blue","Not sig" = "grey70")) +
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "steelblue") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "steelblue") +
+  theme_minimal() +
+  labs(
+    title = "Volcano plot of genes in diseased vs healthy lung tissue",
+    x = "log2 fold change (logFC)",
+    y = "-log10(p-value)",
+    color = NULL
+  )
+```
+**Figure X. Volcano plot representing the differential expression of genes in IPF** Red points represent genes which are significantly upregulated in diseased tissue (FDR < 0.05, logFC > 0), blue points represent genes that are significantly downregulated in diseased tissue (FDR < 0.05, logFC < 0), and grey points represent genes that are not significantly differentially expressed. 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Chose the top n most significantly differentially expressed genes (by FDR) to display in a heatmap
+top_n <- 20
+
+# Take table, order rows by FDR, then by p-value if necessary, then take top_n rows
+top_hits <- table %>%
+  arrange(FDR, PValue) %>%
+  slice_head(n = top_n)
+
+# Gene names
+top_genes <- top_hits$gene
+
+kable(head(top_hits[, c("gene", "logFC", "FDR")]), digits = 50)
+
+heatmap_data <- norm_cpm[top_genes, ]
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#Making a heat map
+# Take log of normalized CPM              
+logcpm <- log2(norm_cpm + 1)
+
+# Subset to top genes
+hm_matrix <- logcpm[top_genes, , drop = FALSE]
+
+# Z-score per gene (makes mean = 0 and sd = 1 for all samples)
+hm_z <- t(scale(t(hm_matrix)))
+
+#Create annotations for metadata (normal vs diseased tissue)
+if (!require("ComplexHeatmap", quietly = TRUE))
+    BiocManager::install("ComplexHeatmap")
+if (!require("RColorBrewer", quietly = TRUE))
+    install.packages("RColorBrewer")
+
+library(ComplexHeatmap)
+library(RColorBrewer)
+    
+# Get disease status
+disease <- factor(matched_pheno$characteristics_ch1.7)
+
+# Assign colors to status
+levels(disease) <- short_labels
+disease_cols <- setNames(c("maroon", "palegreen4"), levels(disease))
+
+# Create annotation 
+hm_annot <- HeatmapAnnotation(disease = disease, col = list(disease = disease_cols),
+  annotation_legend_param = list(disease = list(title = "Tissue Type"))
+)
+
+# Make a heatmap with z-score as argument
+Heatmap(hm_z,
+        top_annotation = hm_annot,
+        name = "Z-score", 
+        show_column_names = FALSE, 
+        column_title = "Heatmap of Top 20 Differentially Expressed Genes"
+        )
+```
+**Figure X. Heatmap of top 20 differentially expressed genes** 
+There is clear clustering observed where genes are upregulated in one condition (diseased/normal tissue) and downregulated in the other. 
+
+## Questions: 
+1. Why is the dataset of interest to you?
+I read the paper and appreciated its brevity and straightforwardness. I hadn't heard of Idiopathic pulmonary fibrosis (IPF) before, and the topic interested me. 
+2. What are the control and test conditions of the dataset? 
+[Test conditions](#obtaining-and-assessing-the-data)
+3. How many samples in each of the conditions of your dataset?
+[Test conditions](#introduction)
+4. Were there expression values that were not unique for specific genes? How did you handle these?
+No. 
+5. Were there expression values that could not be mapped to current HUGO symbols?
+Yes. [Mapping Ensembl IDs to HGNC symbols](#mapping-ensembl-ids-to-hgnc-symbols)
+6. Were there any outliers in your dataset? How were they handled in the originating paper? How many outliers were removed?
+No.
+7. How did you handle replicates? 
+There were none. See end of  [Obtaining and assessing the data](#obtaining-and-assessing-the-data)
+8. What is the final coverage of your dataset?
+[Differential expression results](#differential-expression-results)
+
+# References
