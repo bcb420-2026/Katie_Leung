@@ -1,0 +1,23 @@
+producer_class	xtools.gsea.GseaPreranked
+producer_timestamp	1773109289912
+param	rpt_label	Diseased_vs_Norman_IPF
+param	rnd_seed	timestamp
+param	set_min	15
+param	zip_report	false
+param	create_svgs	false
+param	scoring_scheme	weighted
+param	rnk	/Users/katherineleung/Desktop/Bioinformatics/BCB420/Katie_Leung/Assignment 2/A2_data/ranked_list.rnk
+param	norm	meandiv
+param	out	/Users/katherineleung/Desktop/Bioinformatics/BCB420/Katie_Leung/Assignment 2/GSEA_Output
+param	mode	Abs_max_of_probes
+param	include_only_symbols	true
+param	help	false
+param	set_max	500
+param	gmx	/Users/katherineleung/Desktop/Bioinformatics/BCB420/Katie_Leung/Assignment 2/A2_data/Human_GOBP_AllPathways_noPFOCR_no_GO_iea_March_02_2026_symbol_dedup.gmt
+param	make_sets	true
+param	plot_top_x	20
+param	gui	false
+param	nperm	2000
+param	collapse	No_Collapse
+
+file	/Users/katherineleung/Desktop/Bioinformatics/BCB420/Katie_Leung/Assignment 2/GSEA_Output/Diseased_vs_Norman_IPF.GseaPreranked.1773109289912/index.html
